@@ -4,42 +4,53 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
-import { Sidebar, SidebarContent, SidebarHeader, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
-import { PlusCircle, Home, History, Search, BookOpen, User, Settings, Lightbulb } from "lucide-react";
+import { PlusCircle, Lightbulb } from "lucide-react";
+import { 
+  PromptItem, 
+  generateAdvancedSuggestions, 
+  loadPromptHistory, 
+  savePromptHistory, 
+  copyToClipboard, 
+  generatePromptId,
+  categorizePrompt
+} from '@/utils/promptUtils';
+import { AppSidebar } from '@/components/AppSidebar';
 
 const Index = () => {
   const [prompt, setPrompt] = useState('');
-  const [promptHistory, setPromptHistory] = useState([]);
-  const [suggestions, setSuggestions] = useState([]);
+  const [promptHistory, setPromptHistory] = useState<PromptItem[]>([]);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const { toast } = useToast();
 
-  // Mock function to generate suggestions based on the prompt
-  const generateSuggestions = (input) => {
-    // In a real app, this would call an AI API
-    const mockSuggestions = [
-      `Write a story about ${input}`,
-      `Create a tutorial on ${input}`,
-      `Design a character based on ${input}`,
-      `Develop a business idea around ${input}`,
-      `Make a song lyric about ${input}`
-    ];
-    return mockSuggestions;
-  };
+  // Load history from localStorage on initial render
+  useEffect(() => {
+    const history = loadPromptHistory();
+    setPromptHistory(history);
+  }, []);
 
-  const handleSubmit = (e) => {
+  // Save history to localStorage whenever it changes
+  useEffect(() => {
+    savePromptHistory(promptHistory);
+  }, [promptHistory]);
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!prompt.trim()) return;
 
-    // Generate new suggestions
-    const newSuggestions = generateSuggestions(prompt);
+    // Generate new suggestions using our advanced generator
+    const newSuggestions = generateAdvancedSuggestions(prompt);
     setSuggestions(newSuggestions);
 
+    // Categorize the prompt based on its content
+    const category = categorizePrompt(prompt);
+
     // Add to history
-    const newPromptItem = {
-      id: Date.now(),
+    const newPromptItem: PromptItem = {
+      id: generatePromptId(),
       text: prompt,
       createdAt: new Date().toISOString(),
-      suggestions: newSuggestions
+      suggestions: newSuggestions,
+      category
     };
 
     setPromptHistory([newPromptItem, ...promptHistory]);
@@ -51,19 +62,6 @@ const Index = () => {
     // Clear the input field
     setPrompt('');
   };
-
-  // Load history from localStorage on initial render
-  useEffect(() => {
-    const savedHistory = localStorage.getItem('promptHistory');
-    if (savedHistory) {
-      setPromptHistory(JSON.parse(savedHistory));
-    }
-  }, []);
-
-  // Save history to localStorage whenever it changes
-  useEffect(() => {
-    localStorage.setItem('promptHistory', JSON.stringify(promptHistory));
-  }, [promptHistory]);
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -115,13 +113,7 @@ const Index = () => {
                     <div
                       key={index}
                       className="p-3 border rounded-md bg-white hover:bg-gray-50 cursor-pointer transition-colors"
-                      onClick={() => {
-                        navigator.clipboard.writeText(suggestion);
-                        toast({
-                          title: "Copied to clipboard",
-                          description: "The prompt has been copied to your clipboard",
-                        });
-                      }}
+                      onClick={() => copyToClipboard(suggestion)}
                     >
                       {suggestion}
                     </div>
@@ -131,38 +123,32 @@ const Index = () => {
             </Card>
           )}
 
-          {/* Prompt history */}
+          {/* Recent Prompts */}
           {promptHistory.length > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <History className="h-5 w-5" />
-                  Prompt History
+                  <PlusCircle className="h-5 w-5" />
+                  Recent Prompts
                 </CardTitle>
                 <CardDescription>
-                  Your previously generated prompts
+                  Your recently generated prompts
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid gap-4">
-                  {promptHistory.map((item) => (
+                  {promptHistory.slice(0, 3).map((item) => (
                     <div key={item.id} className="border rounded-md p-4 bg-white">
                       <div className="font-medium mb-2">{item.text}</div>
                       <div className="text-sm text-muted-foreground mb-3">
                         {new Date(item.createdAt).toLocaleString()}
                       </div>
                       <div className="grid gap-2">
-                        {item.suggestions.map((suggestion, idx) => (
+                        {item.suggestions.slice(0, 2).map((suggestion, idx) => (
                           <div
                             key={idx}
                             className="text-sm p-2 bg-gray-50 rounded border cursor-pointer hover:bg-gray-100"
-                            onClick={() => {
-                              navigator.clipboard.writeText(suggestion);
-                              toast({
-                                title: "Copied to clipboard",
-                                description: "The prompt has been copied to your clipboard",
-                              });
-                            }}
+                            onClick={() => copyToClipboard(suggestion)}
                           >
                             {suggestion}
                           </div>
@@ -172,9 +158,11 @@ const Index = () => {
                   ))}
                 </div>
               </CardContent>
-              {promptHistory.length > 5 && (
+              {promptHistory.length > 3 && (
                 <CardFooter>
-                  <Button variant="outline" className="w-full">View All History</Button>
+                  <Button variant="outline" className="w-full" asChild>
+                    <a href="/history">View All History</a>
+                  </Button>
                 </CardFooter>
               )}
             </Card>
@@ -182,53 +170,6 @@ const Index = () => {
         </div>
       </main>
     </div>
-  );
-};
-
-// Sidebar component
-const AppSidebar = () => {
-  const menuItems = [
-    { title: "Home", icon: Home, url: "/" },
-    { title: "History", icon: History, url: "#history" },
-    { title: "Explore", icon: Search, url: "#explore" },
-    { title: "Learning", icon: BookOpen, url: "#learning" },
-    { title: "Account", icon: User, url: "#account" },
-    { title: "Settings", icon: Settings, url: "#settings" },
-  ];
-
-  return (
-    <Sidebar className="border-r">
-      <SidebarHeader className="h-14 flex items-center justify-center p-2 border-b">
-        <div className="flex items-center space-x-2">
-          <PlusCircle className="h-5 w-5" />
-          <span className="font-bold">Prompt Generator</span>
-        </div>
-      </SidebarHeader>
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Dashboard</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {menuItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
-                    <a href={item.url} className="flex items-center gap-3">
-                      <item.icon className="h-5 w-5" />
-                      <span>{item.title}</span>
-                    </a>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
-      <SidebarFooter className="p-4 border-t">
-        <div className="text-sm text-muted-foreground">
-          Version 1.0.0
-        </div>
-      </SidebarFooter>
-    </Sidebar>
   );
 };
 
